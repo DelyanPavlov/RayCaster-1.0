@@ -11,10 +11,10 @@ namespace RayCast;
 
 struct Vector
 {
-    public Point pos;
+    public Vector2 pos;
     public Vector2 dir;
 
-    public Vector(Point pos, Vector2 dir)
+    public Vector(Vector2 pos, Vector2 dir)
     {
         this.pos = pos;
         this.dir = dir;
@@ -36,19 +36,17 @@ struct Point
     {
         return new Point(a.X * b.X, a.Y * b.Y);
     }
-
-    public static Point operator +(Point a, Vector2 b)
+    public static Point operator +(Point a, Point b)
     {
-        return new Point(a.X + (int)b.X, a.Y + (int)b.Y);
+        return new Point(a.X + b.X, a.Y + b.Y);
     }
     public static Point operator -(Point a, Vector2 b)
     {
         return new Point(a.X - (int)b.X, a.Y - (int)b.Y);
     }
-
-    public static Point operator +(Point a, Point b)
+    public static Point operator +(Point a, Vector2 b)
     {
-        return new Point(a.X + b.X, a.Y + b.Y);
+        return new Point(a.X + (int)MathF.Round(b.X), a.Y + (int)MathF.Round(b.Y));
     }
 }
 
@@ -77,12 +75,8 @@ static class Program
     [System.STAThread]
     public static void Main()
     {
-        float length = 0f, wallSize = 30, fov = 60f, currHead = -90f;
-        int textH = 0, textW = 0, screenW = 1280, screenH = 720;
-
-        Raylib.InitWindow(screenW, screenH, "Caster");
-        Raylib.SetTargetFPS(60);
-
+        Vector2 move = new Vector2(0, 0);
+        Vector2 player = new Vector2(377, 772);
         Line[] walls = {
     // Outer walls
     new ( new Point(50, 50),   new Point(50, 590)),
@@ -126,13 +120,16 @@ static class Program
     // Diagonal
     new ( new Point(200, 225), new Point(250, 290)),
 };
-
-
-
-        Point player = new Point(377, 772);
+        int textH = 0, textW = 0, screenW = 1280, screenH = 720, moveSpeed = 9, rotateSpeed = 11;
         Vector[] rays = new Vector[screenW];
-        float[] closest = new float[rays.Length];
-        float[] closestT = new float[rays.Length];
+        float length = 0f, wallSize = 30, fov = 60f, currHead = -90f, DT;
+        float[] closest = new float[rays.Length], closestT = new float[rays.Length];
+        byte[] texture = LoadTGA(@"C:\Users\Delyan\Downloads\wall.tga", out textH, out textW, 4);
+
+        Raylib.InitWindow(screenW, screenH, "Caster");
+        Raylib.SetTargetFPS(240);
+
+
         for (int i = 0; i < rays.Length; i++)
         {
             rays[i] = new Vector(player, angle(0));
@@ -140,6 +137,10 @@ static class Program
 
         while (!Raylib.WindowShouldClose())
         {
+            Console.Clear();
+            Console.WriteLine(Raylib.GetFPS());
+            DT = Raylib.GetFrameTime() * 10;
+            Console.WriteLine(DT * 100 + "ms");
             for (int i = 0; i < rays.Length; i++)
             {
                 closest[i] = int.MaxValue;
@@ -149,17 +150,21 @@ static class Program
 
             if (Raylib.IsKeyDown(KeyboardKey.Right))
             {
-                currHead += 1;
+                currHead += 1 * DT * rotateSpeed;
             }
             else if (Raylib.IsKeyDown(KeyboardKey.Left))
             {
-                currHead -= 1;
+                currHead -= 1 * DT * rotateSpeed;
             }
 
-            if (Raylib.IsKeyDown(KeyboardKey.A)) player += angle(currHead - 90) * 2;
-            if (Raylib.IsKeyDown(KeyboardKey.D)) player += angle(currHead + 90) * 2;
-            if (Raylib.IsKeyDown(KeyboardKey.W)) player += angle(currHead) * 2;
-            if (Raylib.IsKeyDown(KeyboardKey.S)) player -= angle(currHead) * 2;
+            move = new Vector2(0, 0);
+            if (Raylib.IsKeyDown(KeyboardKey.A)) move += angle(currHead - 90);
+            if (Raylib.IsKeyDown(KeyboardKey.D)) move += angle(currHead + 90);
+            if (Raylib.IsKeyDown(KeyboardKey.W)) move += angle(currHead);
+            if (Raylib.IsKeyDown(KeyboardKey.S)) move -= angle(currHead);
+            Vector2.Normalize(move);
+            player += move * 2 * DT * new Vector2(moveSpeed, moveSpeed) * 0.75f;
+
 
             Vector2 temp = new Vector2();
 
@@ -181,7 +186,6 @@ static class Program
                 float offsetAngle = (rayAngle - currHead) * (MathF.PI / 180f);
                 closest[j] *= MathF.Cos(offsetAngle);
             }
-            byte[] texture = LoadTGA(@"C:\Users\Delyan\Downloads\wall.tga", out textH, out textW, 4);
             Color wallColor;
             float projectionDist = (rays.Length / 2f) / MathF.Tan((fov / 2f) * MathF.PI / 180f);
 
@@ -191,15 +195,16 @@ static class Program
                 int individualHeight = (int)MathF.Max(wallHeight / textH, 1f);
                 int screenMidY = screenH / 2;
                 int top = (int)(screenMidY - wallHeight / 2);
+                int bottom = (int)(screenMidY + wallHeight / 2);
 
                 int texCol = (int)(closestT[i] * textW);
                 texCol = Math.Clamp(texCol, 0, textW - 1);
 
                 for (int j = 0; j < textH; j++)
                 {
-                    int colorInd = (j * textW + texCol) * 3;
+                    int colorInd = (/*j * textW +*/ texCol) * 3;
                     wallColor = new Color(texture[colorInd], texture[colorInd + 1], texture[colorInd + 2]);
-                    Raylib.DrawLine(i, j * individualHeight + top, i, (j + 1) * individualHeight + top, wallColor);
+                    Raylib.DrawLine(i, top, i, bottom, wallColor);
                 }
             }
 
