@@ -231,15 +231,13 @@ static class Program
 
         if (den == 0)
         {
-            return new Vector2(100f, 0f);
+            return new Vector2(int.MaxValue, 0f);
         }
 
         float t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / den;
         float u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / den;
 
         if (t >= 0f && t <= 1f && u > 0) return new Vector2(u, t);
-
-
 
         return new Vector2(int.MaxValue, int.MaxValue);
     }
