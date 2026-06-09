@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 
 namespace RayCast;
 
@@ -120,13 +121,14 @@ static class Program
     // Diagonal
     new ( new Point(200, 225), new Point(250, 290)),
 };
-        int textH = 0, textW = 0, screenW = 1280, screenH = 720, moveSpeed = 9, rotateSpeed = 11;
+        int textH, textW, screenW = 1280, screenH = 720, moveSpeed = 9, rotateSpeed = 11, chanels;
         Vector[] rays = new Vector[screenW];
-        float length = 0f, wallSize = 30, fov = 60f, currHead = -90f, DT;
+        float length = 0f, wallSize = 30, fov = 60f, currHead = -90f, DT = 0f;
         float[] closest = new float[rays.Length], closestT = new float[rays.Length];
-        byte[] texture = LoadTGA(@"C:\Users\Delyan\Downloads\wall.tga", out textH, out textW, 4);
+        byte[] texture = LoadTGA(@"C:\Users\Delyan\Downloads\wall.tga", out textH, out textW, out chanels);
+        bool drawData = false;
 
-        Raylib.InitWindow(screenW, screenH, "Caster");
+        Raylib.InitWindow(screenW, screenH, "Ray caster");
         Raylib.SetTargetFPS(240);
 
 
@@ -137,16 +139,18 @@ static class Program
 
         while (!Raylib.WindowShouldClose())
         {
-            Console.Clear();
-            Console.WriteLine(Raylib.GetFPS());
             DT = Raylib.GetFrameTime() * 10;
-            Console.WriteLine(DT * 100 + "ms");
             for (int i = 0; i < rays.Length; i++)
             {
                 closest[i] = int.MaxValue;
             }
             Raylib.BeginDrawing();
             Raylib.ClearBackground(Color.Black);
+
+            if (Raylib.IsKeyPressed(KeyboardKey.F3))
+            {
+                drawData = !drawData;
+            }
 
             if (Raylib.IsKeyDown(KeyboardKey.Right))
             {
@@ -177,35 +181,73 @@ static class Program
                 {
                     temp = RayLineInterection(rays[j], walls[i]);
                     length = temp[0];
-                    if (length < closest[j])
+
+                    float offsetAngle = (rayAngle - currHead) * (MathF.PI / 180f);
+                    float correctedLength = length * MathF.Cos(offsetAngle);
+
+                    if (correctedLength < closest[j])
                     {
-                        closest[j] = length;
-                        closestT[j] = temp[1];
+                        closest[j] = correctedLength;
+
+                        float wallLength = Vector2.Distance(
+                            new Vector2(walls[i].p1.X, walls[i].p1.Y),
+                            new Vector2(walls[i].p2.X, walls[i].p2.Y)
+                        );
+                        closestT[j] = (temp[1] * wallLength / textW) % 1.0f;
                     }
                 }
-                float offsetAngle = (rayAngle - currHead) * (MathF.PI / 180f);
-                closest[j] *= MathF.Cos(offsetAngle);
+                // remove the offsetAngle and cos correction that was after the loop
             }
+            
             Color wallColor;
             float projectionDist = (rays.Length / 2f) / MathF.Tan((fov / 2f) * MathF.PI / 180f);
 
             for (int i = 0; i < rays.Length; i++)
             {
+                Random rnd = new Random();
                 float wallHeight = (wallSize * projectionDist) / closest[i];
-                int individualHeight = (int)MathF.Max(wallHeight / textH, 1f);
+                int individualHeight = (int)MathF.Ceiling(MathF.Max(wallHeight / textH, 1f));
+                int currScreenH = individualHeight * textH;
                 int screenMidY = screenH / 2;
                 int top = (int)(screenMidY - wallHeight / 2);
                 int bottom = (int)(screenMidY + wallHeight / 2);
-
                 int texCol = (int)(closestT[i] * textW);
+                int tempSize = 0, ind = 0, offset = top;
                 texCol = Math.Clamp(texCol, 0, textW - 1);
+
+                int[] heights = new int[textH];
+                Array.Fill(heights, individualHeight);
+
+                if (heights[0] != 1)
+                {
+                    for (int j = 0; j < heights.Length; j++)
+                    {
+                        tempSize += heights[j];
+                    }
+
+                    while (tempSize > wallHeight)
+                    {
+                        heights[ind]--;
+                        tempSize--;
+                        ind++;//= rnd.Next(0, heights.Length - 1);
+                    }
+                }
+
+
 
                 for (int j = 0; j < textH; j++)
                 {
-                    int colorInd = (/*j * textW +*/ texCol) * 3;
+                    int colorInd = Math.Max((j * textW + texCol) * chanels, 0);
                     wallColor = new Color(texture[colorInd], texture[colorInd + 1], texture[colorInd + 2]);
-                    Raylib.DrawLine(i, top, i, bottom, wallColor);
+                    Raylib.DrawLine(i, offset, i, offset + heights[j], wallColor);
+                    offset += heights[j];
                 }
+            }
+
+            if (drawData)
+            {
+                Raylib.DrawFPS(10, 10);
+                Raylib.DrawText($"{MathF.Round(DT * 10, 3)} ms", 10, 30, 20, Color.DarkGreen);
             }
 
             Raylib.EndDrawing();
@@ -248,7 +290,7 @@ static class Program
         return new Vector2(MathF.Cos(angleRad), MathF.Sin(angleRad));
     }
 
-    public static byte[] LoadTGA(string filePath, out int width, out int height, int channels)
+    public static byte[] LoadTGA(string filePath, out int width, out int height, out int channels)
     {
         using (BinaryReader br = new BinaryReader(File.OpenRead(filePath)))
         {
