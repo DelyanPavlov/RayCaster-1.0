@@ -122,14 +122,17 @@ static class Program
     new ( new Point(200, 225), new Point(250, 290)),
 };
         int textH, textW, screenW = 1280, screenH = 720, moveSpeed = 9, rotateSpeed = 11, chanels;
+        int screenMidY = screenH / 2, tempSize = 0, ind = 0, offset, texCol, top, currScreenH, individualHeight;
         Vector[] rays = new Vector[screenW];
-        float length = 0f, wallSize = 30, fov = 60f, currHead = -90f, DT = 0f;
+        float length = 0f, wallSize = 30, fov = 60f, currHead = -90f, DT = 0f, wallHeight;
         float[] closest = new float[rays.Length], closestT = new float[rays.Length];
         byte[] texture = LoadTGA(@"C:\Users\Delyan\Downloads\wall.tga", out textH, out textW, out chanels);
+        int[] heights;
         bool drawData = false;
+        bool[] heightsVisit;
 
+        Raylib.SetTargetFPS(1000);
         Raylib.InitWindow(screenW, screenH, "Ray caster");
-        Raylib.SetTargetFPS(240);
 
 
         for (int i = 0; i < rays.Length; i++)
@@ -193,61 +196,59 @@ static class Program
                             new Vector2(walls[i].p1.X, walls[i].p1.Y),
                             new Vector2(walls[i].p2.X, walls[i].p2.Y)
                         );
-                        closestT[j] = (temp[1] * wallLength / textW) % 1.0f;
+                        closestT[j] = temp[1] * wallLength / textH % 1f;
                     }
                 }
-                // remove the offsetAngle and cos correction that was after the loop
             }
-            
+
             Color wallColor;
             float projectionDist = (rays.Length / 2f) / MathF.Tan((fov / 2f) * MathF.PI / 180f);
 
+
             for (int i = 0; i < rays.Length; i++)
             {
-                Random rnd = new Random();
-                float wallHeight = (wallSize * projectionDist) / closest[i];
-                int individualHeight = (int)MathF.Ceiling(MathF.Max(wallHeight / textH, 1f));
-                int currScreenH = individualHeight * textH;
-                int screenMidY = screenH / 2;
-                int top = (int)(screenMidY - wallHeight / 2);
-                int bottom = (int)(screenMidY + wallHeight / 2);
-                int texCol = (int)(closestT[i] * textW);
-                int tempSize = 0, ind = 0, offset = top;
+                wallHeight = (wallSize * projectionDist) / closest[i];
+                individualHeight = (int)MathF.Ceiling(MathF.Max(wallHeight / textH, 1f));
+                currScreenH = individualHeight * textH;
+                top = (int)(screenMidY - wallHeight / 2);
+                offset = top;
+                tempSize = 0;
+                ind = 0;
+                texCol = (int)((1 - closestT[i]) * textW);
+
                 texCol = Math.Clamp(texCol, 0, textW - 1);
 
-                int[] heights = new int[textH];
+                heights = new int[textH];
+                heightsVisit = new bool[textH];
                 Array.Fill(heights, individualHeight);
-
-                if (heights[0] != 1)
+                Array.Fill(heightsVisit, false);
+                for (int j = 0; j < heights.Length; j++)
                 {
-                    for (int j = 0; j < heights.Length; j++)
-                    {
-                        tempSize += heights[j];
-                    }
+                    tempSize += heights[j];
+                }
 
-                    while (tempSize > wallHeight)
-                    {
-                        heights[ind]--;
-                        tempSize--;
-                        ind++;//= rnd.Next(0, heights.Length - 1);
-                    }
+                while (tempSize > wallHeight)
+                {
+                    heights[ind]--;
+                    tempSize--;
+                    ind++;
                 }
 
 
 
                 for (int j = 0; j < textH; j++)
                 {
-                    int colorInd = Math.Max((j * textW + texCol) * chanels, 0);
+                    int colorInd = Math.Min((j * (textH) + texCol) * chanels, textH * textW * chanels - 3);
                     wallColor = new Color(texture[colorInd], texture[colorInd + 1], texture[colorInd + 2]);
                     Raylib.DrawLine(i, offset, i, offset + heights[j], wallColor);
                     offset += heights[j];
                 }
             }
-
+            
             if (drawData)
             {
                 Raylib.DrawFPS(10, 10);
-                Raylib.DrawText($"{MathF.Round(DT * 10, 3)} ms", 10, 30, 20, Color.DarkGreen);
+                Raylib.DrawText($"{MathF.Round(DT * 10, 5)} ms", 10, 30, 20, Color.Green);
             }
 
             Raylib.EndDrawing();
