@@ -1,9 +1,6 @@
 ﻿using Raylib_cs;
-using System.Collections.Specialized;
-using System.ComponentModel;
 using System.Numerics;
-using System.Runtime.CompilerServices;
-using System.Threading.Channels;
+using System.Runtime.InteropServices;
 
 namespace RayCast;
 
@@ -72,7 +69,6 @@ struct Line
 
 static class Program
 {
-    public static List<float> Ucord = new List<float>();
     [System.STAThread]
     public static void Main()
     {
@@ -123,15 +119,13 @@ static class Program
     // Diagonal
     new ( new Point(200, 225), new Point(250, 290)),
 };
-        int textH, textW, screenW = 1280, screenH = 720, moveSpeed = 9, rotateSpeed = 11, chanels;
-        int screenMidY = screenH / 2, tempSize = 0, ind = 0, offset, texCol, top, currScreenH, individualHeight;
+        int textH, textW, screenW = 1280, screenH = 720, moveSpeed = 9, rotateSpeed = 11, chanels, colorInd, screenY1, screenY0;
+        int screenMidY = screenH / 2, offset, texCol, currScreenH, individualHeight;
         Vector[] rays = new Vector[screenW];
-        float length = 0f, wallSize = 30, fov = 60f, currHead = -90f, DT = 0f, wallHeight, projectionDist;
+        float length = 0f, wallSize = 30, fov = 60f, currHead = -90f, DT = 0f, wallHeight, projectionDist, yStart, yEnd, rayAngle, offsetAngle, correctedLength, wallLength;
         float[] closest = new float[rays.Length], closestT = new float[rays.Length];
         byte[] wallTexture = LoadTGA(@"C:\Users\Delyan\Downloads\wall.tga", out textH, out textW, out chanels);
-        int[] heights;
         bool drawData = false;
-        bool[] heightsVisit;
 
         Raylib.SetTargetFPS(1000);
         Raylib.InitWindow(screenW, screenH, "Ray caster");
@@ -176,7 +170,7 @@ static class Program
 
             for (int j = 0; j < rays.Length; j++)
             {
-                float rayAngle = j * (fov / rays.Length) + currHead - fov / 2;
+                rayAngle = j * (fov / rays.Length) + currHead - fov / 2;
                 rays[j] = new Vector(player, angle(rayAngle));
 
                 for (int i = 0; i < walls.Length; i++)
@@ -184,17 +178,14 @@ static class Program
                     temp = RayLineInterection(rays[j], walls[i]);
                     length = temp[0];
 
-                    float offsetAngle = (rayAngle - currHead) * (MathF.PI / 180f);
-                    float correctedLength = length * MathF.Cos(offsetAngle);
+                    offsetAngle = (rayAngle - currHead) * (MathF.PI / 180f);
+                    correctedLength = length * MathF.Cos(offsetAngle);
 
                     if (correctedLength < closest[j])
                     {
                         closest[j] = correctedLength;
 
-                        float wallLength = Vector2.Distance(
-                            new Vector2(walls[i].p1.X, walls[i].p1.Y),
-                            new Vector2(walls[i].p2.X, walls[i].p2.Y)
-                        );
+                        wallLength = Vector2.Distance(new Vector2(walls[i].p1.X, walls[i].p1.Y), new Vector2(walls[i].p2.X, walls[i].p2.Y));
                         closestT[j] = temp[1] * wallLength / textH % 1f;
                     }
                 }
@@ -208,41 +199,25 @@ static class Program
                 wallHeight = (wallSize * projectionDist) / closest[i];
                 individualHeight = (int)MathF.Ceiling(MathF.Max(wallHeight / textH, 1f));
                 currScreenH = individualHeight * textH;
-                top = (int)(screenMidY - wallHeight / 2);
-                offset = top;
-                tempSize = 0;
-                ind = 0;
+                offset = (int)(screenMidY - wallHeight / 2);
                 texCol = (int)((1 - closestT[i]) * textW);
-
                 texCol = Math.Clamp(texCol, 0, textW - 1);
-
-                heights = new int[textH];
-                heightsVisit = new bool[textH];
-                Array.Fill(heights, individualHeight);
-                Array.Fill(heightsVisit, false);
-                for (int j = 0; j < heights.Length; j++)
-                {
-                    tempSize += heights[j];
-                }
-
-                while (tempSize > wallHeight)
-                {
-                    heights[ind]--;
-                    tempSize--;
-                    ind++;
-                }
-
 
 
                 for (int j = 0; j < textH; j++)
                 {
-                    int colorInd = Math.Min((j * (textH) + texCol) * chanels, textH * textW * chanels - 3);
+                    yStart = offset + (j / (float)textH) * wallHeight;
+                    yEnd = offset + ((j + 1) / (float)textH) * wallHeight;
+
+                    screenY0 = (int)MathF.Round(yStart);
+                    screenY1 = (int)MathF.Round(yEnd);
+
+                    colorInd = Math.Min((j * textH + texCol) * chanels, textH * textW * chanels - 3);
                     wallColor = new Color(wallTexture[colorInd], wallTexture[colorInd + 1], wallTexture[colorInd + 2]);
-                    Raylib.DrawLine(i, offset, i, offset + heights[j], wallColor);
-                    offset += heights[j];
+                    Raylib.DrawLine(i, screenY0, i, screenY1, wallColor);
                 }
             }
-            
+
             if (drawData)
             {
                 Raylib.DrawFPS(10, 10);
@@ -292,61 +267,61 @@ static class Program
 
     public static byte[] LoadTGA(string filePath, out int width, out int height, out int channels)
     {
-        using (BinaryReader br = new BinaryReader(File.OpenRead(filePath)))
+        using BinaryReader br = new BinaryReader(File.OpenRead(filePath));
+
+        byte idLength = br.ReadByte();
+        byte colorMapType = br.ReadByte();
+        byte imageType = br.ReadByte();
+
+        if (imageType != 2)
+            throw new Exception("Only uncompressed RGB(A) TGA (type 2) is supported.");
+
+        br.BaseStream.Seek(5, SeekOrigin.Current);
+
+        br.BaseStream.Seek(4, SeekOrigin.Current);
+
+        width = br.ReadInt16();
+        height = br.ReadInt16();
+        byte bpp = br.ReadByte();
+        byte descriptor = br.ReadByte();
+
+        channels = bpp / 8;
+        if (channels != 3 && channels != 4)
+            throw new Exception("Only 24-bit or 32-bit TGA supported.");
+
+        if (idLength > 0)
+            br.BaseStream.Seek(idLength, SeekOrigin.Current);
+
+        int pixelCount = width * height;
+        byte[] data = br.ReadBytes(pixelCount * channels);
+
+        for (int i = 0; i < data.Length; i += channels)
         {
-            byte idLength = br.ReadByte();
-            byte colorMapType = br.ReadByte();
-            byte imageType = br.ReadByte();
-
-            if (imageType != 2)
-                throw new Exception("Only uncompressed RGB(A) TGA (type 2) is supported.");
-
-            br.BaseStream.Seek(5, SeekOrigin.Current);
-
-            br.BaseStream.Seek(4, SeekOrigin.Current);
-
-            width = br.ReadInt16();
-            height = br.ReadInt16();
-            byte bpp = br.ReadByte();
-            byte descriptor = br.ReadByte();
-
-            channels = bpp / 8;
-            if (channels != 3 && channels != 4)
-                throw new Exception("Only 24-bit or 32-bit TGA supported.");
-
-            if (idLength > 0)
-                br.BaseStream.Seek(idLength, SeekOrigin.Current);
-
-            int pixelCount = width * height;
-            byte[] data = br.ReadBytes(pixelCount * channels);
-
-            for (int i = 0; i < data.Length; i += channels)
-            {
-                byte temp = data[i];
-                data[i] = data[i + 2];
-                data[i + 2] = temp;
-            }
-
-            bool originTop = (descriptor & 0x20) != 0;
-            if (!originTop)
-            {
-                int stride = width * channels;
-                byte[] flipped = new byte[data.Length];
-
-                for (int y = 0; y < height; y++)
-                {
-                    Buffer.BlockCopy(
-                        data, y * stride,
-                        flipped, (height - 1 - y) * stride,
-                        stride
-                    );
-                }
-
-                data = flipped;
-            }
-
-            return data;
+            byte temp = data[i];
+            data[i] = data[i + 2];
+            data[i + 2] = temp;
         }
+
+        bool originTop = (descriptor & 0x20) != 0;
+        if (!originTop)
+        {
+            int stride = width * channels;
+            byte[] flipped = new byte[data.Length];
+
+            for (int y = 0; y < height; y++)
+            {
+                Buffer.BlockCopy(
+                    data, y * stride,
+                    flipped, (height - 1 - y) * stride,
+                    stride
+                );
+            }
+
+            data = flipped;
+        }
+
+        return data;
+
     }
 
 
